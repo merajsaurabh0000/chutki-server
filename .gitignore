@@ -1,5 +1,6 @@
 node_modules
 .env
 .env.*.local
-.adminjs
+# .adminjs
 .DS_Store
+variable.text
