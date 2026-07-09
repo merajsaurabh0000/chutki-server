@@ -1,4 +1,4 @@
 node_modules
 .env
-.adminjs
+# .adminjs
 npm-debug.log
