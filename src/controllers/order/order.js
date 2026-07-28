@@ -19,6 +19,19 @@ const distanceInKm = (first, second) => {
     return earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 };
 
+const normalizeLocation = location => {
+    const latitude = Number(location?.latitude);
+    const longitude = Number(location?.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return undefined;
+    return {
+      latitude,
+      longitude,
+      address: location?.address || "",
+    };
+};
+
+const roundMoney = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
 const calculateOrderPrice = async (items, branch) => {
     if (!Array.isArray(items) || items.length === 0) {
       throw new Error("Cart is empty");
@@ -47,15 +60,15 @@ const calculateOrderPrice = async (items, branch) => {
       };
     });
 
-    const itemTotal = normalizedItems.reduce((total, item) => {
+    const itemTotal = roundMoney(normalizedItems.reduce((total, item) => {
       const product = productMap.get(String(item.item));
       return total + product.price * item.count;
-    }, 0);
+    }, 0));
     const deliveryCharge =
-      itemTotal >= branch.freeDeliveryThreshold ? 0 : branch.deliveryCharge;
-    const handlingCharge = branch.handlingCharge;
-    const surgeCharge = branch.surgeEnabled ? branch.surgeCharge : 0;
-    const totalPrice = itemTotal + deliveryCharge + handlingCharge + surgeCharge;
+      roundMoney(itemTotal >= branch.freeDeliveryThreshold ? 0 : branch.deliveryCharge);
+    const handlingCharge = roundMoney(branch.handlingCharge);
+    const surgeCharge = roundMoney(branch.surgeEnabled ? branch.surgeCharge : 0);
+    const totalPrice = roundMoney(itemTotal + deliveryCharge + handlingCharge + surgeCharge);
 
     return {
       normalizedItems,
@@ -123,6 +136,7 @@ export const createOrder = async(req,reply)=>{
 
         const newOrder = new Order({
             customer:userId,
+            vendor: branchData.vendor,
             items: pricing.normalizedItems,
             branch,
             itemTotal: pricing.itemTotal,
@@ -166,12 +180,36 @@ export const confirmOrder = async(req,reply)=>{
         if (!deliveryPerson || req.user.role !== "DeliveryPartner") {
             return reply.status(404).send({ message: "Delivery Person not found" });
         }
+
+        const existingOrder = await Order.findById(orderId);
+        if (!existingOrder) {
+          return reply.status(404).send({ message: "Order not found" });
+        }
+        if (String(existingOrder.branch) !== String(deliveryPerson.branch)) {
+          return reply.status(403).send({ message: "This order belongs to another branch" });
+        }
+        if (
+          existingOrder.deliveryPartner &&
+          String(existingOrder.deliveryPartner) === String(userId)
+        ) {
+          await existingOrder.populate("customer branch items.item deliveryPartner");
+          return reply.send(existingOrder);
+        }
+        if (existingOrder.deliveryPartner) {
+          return reply.status(409).send({ message: "Order already assigned to another delivery partner" });
+        }
+        if (existingOrder.status !== "available") {
+          return reply.status(409).send({ message: `Order is ${existingOrder.status}, not available` });
+        }
+
         const order = await Order.findOneAndUpdate(
           {_id: orderId, branch: deliveryPerson.branch, status: "available", deliveryPartner: null},
-          {$set: {status: "confirmed", deliveryPartner: userId, deliveryPersonLocation: {latitude: deliveryPersonLocation?.latitude, longitude: deliveryPersonLocation?.longitude, address: deliveryPersonLocation?.address || ""}}},
+          {$set: {status: "confirmed", deliveryPartner: userId, ...(normalizeLocation(deliveryPersonLocation) ? {deliveryPersonLocation: normalizeLocation(deliveryPersonLocation)} : {})}},
           {new: true, runValidators: true},
         );
-        if (!order) return reply.status(404).send({ message: "Order not found" });
+        if (!order) return reply.status(409).send({ message: "Order could not be assigned. Please refresh and try again." });
+
+        await order.populate("customer branch items.item deliveryPartner");
 
         req.server.io.to(orderId).emit('orderConfirmed',order);
         return reply.send(order)
@@ -208,7 +246,10 @@ export const updateOrderStatus=async(req,reply)=>{
         }
 
         order.status = status;
-        order.deliveryPersonLocation = deliveryPersonLocation;
+        const safeDeliveryPersonLocation = normalizeLocation(deliveryPersonLocation);
+        if (safeDeliveryPersonLocation) {
+          order.deliveryPersonLocation = safeDeliveryPersonLocation;
+        }
         await order.save();
 
         req.server.io.to(orderId).emit("liveTrackingUpdates", order);

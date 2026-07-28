@@ -23,7 +23,7 @@ const Dashboard = () => {
   return (
   <Box variant="grey">
     <Box mb="xl">
-      <H1> Chutki — Groceries in a Snap</H1>
+      <H1> Ghop Ghop Karo</H1>
       <Text>Store performance and content overview</Text>
     </Box>
 

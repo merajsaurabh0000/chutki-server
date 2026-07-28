@@ -4,7 +4,7 @@ import AdminJSFastify from "@adminjs/fastify";
 import * as AdminJSMongoose from "@adminjs/mongoose";
 import * as Models from "../models/index.js";
 import { authenticate, COOKIE_PASSWORD, sessionStore } from "./config.js";
-import { dark, light, noSidebar } from "@adminjs/themes";
+import { dark, light } from "@adminjs/themes";
 import CloudinaryUploadProvider from './cloudinaryUploadProvider.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,7 +36,7 @@ export const admin = new AdminJS({
             options: {
               listProperties: ["email", "role", "isActivated"],
               filterProperties: ["email", "role"],
-              editProperties: ["email", "phone", "name", "password", "branch", "isActivated"],
+              editProperties: ["email", "phone", "name", "password", "vendor", "branch", "isActivated"],
               actions: {
                 edit: {
                   before: async request => {
@@ -59,8 +59,86 @@ export const admin = new AdminJS({
               editProperties: ["email", "name", "isActivated"],
             },
           },
-        { resource: Models.Branch },
-        { resource: Models.Product },
+        {
+          resource: Models.AdminUser,
+          options: {
+            navigation: { name: 'Marketplace', icon: 'User' },
+            listProperties: ['email', 'name', 'role', 'vendor', 'isActive'],
+            filterProperties: ['email', 'name', 'role', 'vendor', 'isActive'],
+            editProperties: ['email', 'name', 'password', 'role', 'vendor', 'branch', 'isActive'],
+            actions: {
+              edit: {
+                before: async request => {
+                  if (!request.payload?.password) {
+                    if (request.payload) delete request.payload.password;
+                  } else {
+                    request.payload.password = await bcrypt.hash(request.payload.password, 12);
+                  }
+                  return request;
+                },
+              },
+            },
+          },
+        },
+        {
+          resource: Models.Vendor,
+          options: {
+            navigation: { name: 'Marketplace', icon: 'Store' },
+            listProperties: ['name', 'ownerName', 'email', 'phone', 'isActive', 'serviceRadiusKm'],
+            filterProperties: ['name', 'email', 'phone', 'isActive'],
+            editProperties: [
+              'name',
+              'ownerName',
+              'email',
+              'phone',
+              'address',
+              'location.latitude',
+              'location.longitude',
+              'serviceRadiusKm',
+              'isActive',
+            ],
+          },
+        },
+        {
+          resource: Models.Branch,
+          options: {
+            listProperties: ['name', 'vendor', 'address', 'isActive', 'deliveryRadiusKm'],
+            filterProperties: ['name', 'vendor', 'isActive'],
+            editProperties: [
+              'name',
+              'vendor',
+              'location.latitude',
+              'location.longitude',
+              'address',
+              'deliveryRadiusKm',
+              'isActive',
+              'deliveryCharge',
+              'handlingCharge',
+              'surgeCharge',
+              'surgeEnabled',
+              'freeDeliveryThreshold',
+              'deliveryPartners',
+              'inventory',
+            ],
+          },
+        },
+        {
+          resource: Models.Product,
+          options: {
+            listProperties: ['name', 'price', 'quantity', 'category'],
+            filterProperties: ['name', 'category'],
+            editProperties: ['name', 'image', 'price', 'discountPrice', 'quantity', 'category'],
+          },
+        },
+        {
+          resource: Models.VendorProduct,
+          options: {
+            navigation: { name: 'Marketplace', icon: 'ShoppingBag' },
+            listProperties: ['vendor', 'product', 'branch', 'price', 'stock', 'isAvailable'],
+            filterProperties: ['vendor', 'product', 'branch', 'isAvailable'],
+            editProperties: ['vendor', 'product', 'branch', 'price', 'discountPrice', 'stock', 'isAvailable'],
+          },
+        },
         { resource: Models.Category },
         {
           resource: Models.PaymentAttempt,
@@ -105,6 +183,76 @@ export const admin = new AdminJS({
             },
           })],
         },
+        {
+          resource: Models.Theme,
+          options: {
+            navigation: { name: 'Store Content', icon: 'PaintBrush' },
+            listProperties: ['name', 'slug', 'isActive', 'priority', 'startDate', 'endDate'],
+            filterProperties: ['name', 'slug', 'isActive', 'startDate', 'endDate'],
+            showProperties: [
+              'name',
+              'slug',
+              'isActive',
+              'priority',
+              'startDate',
+              'endDate',
+              'primaryColor',
+              'headerGradientStart',
+              'headerGradientEnd',
+              'backgroundColor',
+              'stickySearchBackground',
+              'sectionTitleColor',
+              'categoryTileBackground',
+              'productCardBackground',
+              'productCardBorder',
+              'productBadgeBackground',
+              'createdAt',
+              'updatedAt',
+            ],
+            editProperties: [
+              'name',
+              'slug',
+              'isActive',
+              'priority',
+              'startDate',
+              'endDate',
+              'primaryColor',
+              'headerGradientStart',
+              'headerGradientEnd',
+              'backgroundColor',
+              'stickySearchBackground',
+              'sectionTitleColor',
+              'categoryTileBackground',
+              'productCardBackground',
+              'productCardBorder',
+              'productBadgeBackground',
+            ],
+            actions: {
+              new: {
+                after: async response => {
+                  if (response.record?.params?.isActive) {
+                    await Models.Theme.updateMany(
+                      { _id: { $ne: response.record.params._id } },
+                      { $set: { isActive: false } },
+                    );
+                  }
+                  return response;
+                },
+              },
+              edit: {
+                after: async response => {
+                  if (response.record?.params?.isActive) {
+                    await Models.Theme.updateMany(
+                      { _id: { $ne: response.record.params._id } },
+                      { $set: { isActive: false } },
+                    );
+                  }
+                  return response;
+                },
+              },
+            },
+          },
+        },
     ],
     componentLoader,
     dashboard: {
@@ -131,11 +279,11 @@ export const admin = new AdminJS({
       },
     },
     branding: {
-        companyName: " Chutki — Groceries in a Snap",
+        companyName: " Ghop Ghop Karo",
         withMadeWithLove: false,
     },
     defaultTheme:dark.id,
-    availableThemes: [dark,light,noSidebar],
+    availableThemes: [dark, light],
     rootPath:'/admin'
 })
 

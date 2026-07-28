@@ -11,6 +11,11 @@ const orderSchema= new mongoose.Schema({
         ref :"Customer",
         required:true
     },
+    vendor: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Vendor",
+        index: true,
+    },
     deliveryPartner: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "DeliveryPartner",

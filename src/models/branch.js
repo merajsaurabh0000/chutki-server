@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 
 const branchSchema = new mongoose.Schema({
   name: { type: String, required: true },
+  vendor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Vendor",
+    index: true,
+  },
   location: {
     latitude: { type: Number },
     longitude: { type: Number },

@@ -24,6 +24,10 @@ const customerSchema = new mongoose.Schema({
     longitude: { type: Number },
   },
   address: { type: String },
+  selectedAddress: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "CustomerAddress",
+  },
   email: { type: String },
   picture: { type: String },
   socialId: { type: String },
@@ -44,6 +48,11 @@ const deliveryPartnerSchema = new mongoose.Schema({
   branch: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Branch",
+  },
+  vendor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Vendor",
+    index: true,
   },
 });
 

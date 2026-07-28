@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: villagefress-api
+    name: ghop-ghop-api
     runtime: docker
     dockerfilePath: ./server/Dockerfile
     dockerContext: ./server

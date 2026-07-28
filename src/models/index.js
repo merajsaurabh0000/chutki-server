@@ -7,6 +7,11 @@ import Counter from "./counter.js";
 import Banner from "./banner.js";
 import PaymentAttempt from "./paymentAttempt.js";
 import RefreshSession from "./refreshSession.js";
+import Theme from "./theme.js";
+import Vendor from "./vendor.js";
+import AdminUser from "./adminUser.js";
+import VendorProduct from "./vendorProduct.js";
+import CustomerAddress from "./customerAddress.js";
 
 export {
   Order,
@@ -20,4 +25,9 @@ export {
   Banner,
   PaymentAttempt,
   RefreshSession,
+  Theme,
+  Vendor,
+  AdminUser,
+  VendorProduct,
+  CustomerAddress,
 };

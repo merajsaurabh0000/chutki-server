@@ -8,6 +8,13 @@ import {
     logout,
   } from "../controllers/auth/auth.js";
 import { updateUser } from "../controllers/tracking/user.js";
+import {
+    createAddress,
+    deleteAddress,
+    listAddresses,
+    selectAddress,
+    updateAddress,
+} from "../controllers/address/address.js";
 import { verifyToken } from "../middleware/auth.js";
 
 export const authRoutes = async (fastify, options) => {
@@ -20,4 +27,9 @@ export const authRoutes = async (fastify, options) => {
     fastify.post("/logout", logout);
     fastify.get("/user", { preHandler: [verifyToken] }, fetchUser);
     fastify.patch("/user", { preHandler: [verifyToken] }, updateUser);
+    fastify.get("/customer/addresses", { preHandler: [verifyToken] }, listAddresses);
+    fastify.post("/customer/addresses", { preHandler: [verifyToken] }, createAddress);
+    fastify.put("/customer/addresses/:addressId", { preHandler: [verifyToken] }, updateAddress);
+    fastify.post("/customer/addresses/:addressId/select", { preHandler: [verifyToken] }, selectAddress);
+    fastify.delete("/customer/addresses/:addressId", { preHandler: [verifyToken] }, deleteAddress);
 };

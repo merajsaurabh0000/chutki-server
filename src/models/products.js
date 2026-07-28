@@ -2,7 +2,18 @@ import mongoose from "mongoose";
 
 const productScehma = new mongoose.Schema({
   name: { type: String, required: true },
-  image: { type: String, required: true },
+  brand: { type: String, default: "" },
+  description: { type: String, default: "" },
+  subCategory: { type: String, default: "" },
+  breadcrumbs: { type: String, default: "" },
+  source: { type: String, default: "" },
+  sourceId: { type: String, default: "" },
+  vendor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Vendor",
+    index: true,
+  },
+  image: { type: String, default: "" },
   price: { type: Number, required: true },
   discountPrice: { type: Number },
   quantity: { type: String, required: true },
@@ -11,6 +22,11 @@ const productScehma = new mongoose.Schema({
     ref: "Category",
     required: true,
   },
+  categories: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Category",
+    index: true,
+  }],
 });
 
 const Product = mongoose.model("Product", productScehma);
