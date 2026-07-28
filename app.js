@@ -15,7 +15,10 @@ import { admin, buildAdminRouter } from "./src/config/setup.js";
 validateEnvironment();
 await connectDB(process.env.MONGO_URI);
 const app = fastify({bodyLimit: 1024 * 1024, logger: {redact: ["req.headers.authorization", "req.headers.cookie", "req.body.password", "req.body.refreshToken"]}});
-const origins = (process.env.ALLOWED_ORIGINS || "").split(",").filter(Boolean);
+const origins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map(origin => origin.trim())
+  .filter(Boolean);
 await app.register(cors, {origin: process.env.NODE_ENV === "production" ? origins : true, credentials: true});
 await app.register(rateLimit, {max: 120, timeWindow: "1 minute"});
 await app.register(rawBody, {global: false, encoding: "utf8", runFirst: true});
