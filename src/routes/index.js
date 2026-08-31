@@ -1,0 +1,26 @@
+import { authRoutes } from "./auth.js";
+import { orderRoutes } from "./order.js";
+import { categoryRoutes, productRoutes } from "./products.js";
+import { bannerRoutes } from "./banner.js";
+import { paymentRoutes } from "./payment.js";
+import { themeRoutes } from "./theme.js";
+import { adminApiRoutes } from "./adminApi.js";
+import multipart from "@fastify/multipart";
+
+const prefix = "/api";
+
+export const registerRoutes = async (fastify) => {
+  await fastify.register(multipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB
+    },
+  });
+  fastify.register(authRoutes, { prefix: prefix });
+  fastify.register(productRoutes, { prefix: prefix });
+  fastify.register(categoryRoutes, { prefix: prefix });
+  fastify.register(orderRoutes, { prefix: prefix });
+  fastify.register(bannerRoutes, { prefix: prefix });
+  fastify.register(paymentRoutes, { prefix: prefix });
+  fastify.register(themeRoutes, { prefix: prefix });
+  fastify.register(adminApiRoutes, { prefix: prefix });
+};

@@ -1,0 +1,20 @@
+export const toThemeDto = theme => ({
+  id: String(theme._id),
+  name: theme.name,
+  slug: theme.slug,
+  isActive: theme.isActive,
+  priority: theme.priority,
+  startDate: theme.startDate,
+  endDate: theme.endDate,
+  colors: {
+    primary: theme.primaryColor,
+    headerGradient: [theme.headerGradientStart, theme.headerGradientEnd],
+    background: theme.backgroundColor,
+    stickySearchBackground: theme.stickySearchBackground,
+    sectionTitle: theme.sectionTitleColor,
+    categoryTileBackground: theme.categoryTileBackground,
+    productCardBackground: theme.productCardBackground,
+    productCardBorder: theme.productCardBorder,
+    productBadgeBackground: theme.productBadgeBackground,
+  },
+});
