@@ -22,10 +22,6 @@ services:
         generateValue: true
       - key: ALLOWED_ORIGINS
         sync: false
-      - key: MSG91_AUTH_KEY
-        sync: false
-      - key: MSG91_TEMPLATE_ID
-        sync: false
       - key: GOOGLE_WEB_CLIENT_ID
         sync: false
       - key: RAZORPAY_KEY_ID

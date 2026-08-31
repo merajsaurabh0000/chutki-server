@@ -22,7 +22,7 @@ if (process.env.NODE_ENV !== "production" && !process.env.GOOGLE_WEB_CLIENT_ID) 
 }
 
 export const validateEnvironment = () => {
-  const required = ["MONGO_URI", "COOKIE_PASSWORD", "ACCESS_TOKEN_SECRET", "REFRESH_TOKEN_SECRET", "MSG91_AUTH_KEY", "MSG91_TEMPLATE_ID", "GOOGLE_WEB_CLIENT_ID"];
+  const required = ["MONGO_URI", "COOKIE_PASSWORD", "ACCESS_TOKEN_SECRET", "REFRESH_TOKEN_SECRET", "GOOGLE_WEB_CLIENT_ID"];
   if (process.env.NODE_ENV === "production") required.push("RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET", "ADMIN_API_KEY");
   const missing = required.filter(key => !process.env[key]);
   if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
