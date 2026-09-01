@@ -61,8 +61,19 @@ const validatePayload = payload => {
 
 export const listAddresses = async (req, reply) => {
   if (req.user.role !== "Customer") return reply.code(403).send({ message: "Only customers can manage addresses" });
-  const addresses = await CustomerAddress.find({ customer: req.user.userId }).sort({ isSelected: -1, updatedAt: -1 }).lean();
-  return reply.send({ addresses: addresses.map(toAddressDto) });
+  const customer = await Customer.findById(req.user.userId).select("selectedAddress").lean();
+  const addresses = await CustomerAddress.find({ customer: req.user.userId }).sort({ updatedAt: -1 }).lean();
+
+  const selectedId = customer?.selectedAddress ? String(customer.selectedAddress) : null;
+  let activeIndex = addresses.findIndex(a => selectedId ? String(a._id) === selectedId : a.isSelected);
+  if (activeIndex === -1 && addresses.length > 0) activeIndex = 0;
+
+  const dtos = addresses.map((addr, idx) => {
+    const isThisSelected = idx === activeIndex;
+    return toAddressDto({ ...addr, isSelected: isThisSelected });
+  });
+
+  return reply.send({ addresses: dtos });
 };
 
 export const createAddress = async (req, reply) => {
@@ -75,10 +86,15 @@ export const createAddress = async (req, reply) => {
   const validationError = validatePayload(payload);
   if (validationError) return reply.code(400).send({ message: validationError });
 
+  const shouldBeSelected = payload.isSelected || count === 0;
+  if (shouldBeSelected) {
+    await CustomerAddress.updateMany({ customer: req.user.userId }, { $set: { isSelected: false } });
+  }
+
   const address = await CustomerAddress.create({
     ...payload,
     customer: req.user.userId,
-    isSelected: payload.isSelected || count === 0,
+    isSelected: shouldBeSelected,
   });
 
   if (address.isSelected) {
@@ -101,6 +117,10 @@ export const updateAddress = async (req, reply) => {
   const payload = buildPayload(req.body);
   const validationError = validatePayload(payload);
   if (validationError) return reply.code(400).send({ message: validationError });
+
+  if (payload.isSelected) {
+    await CustomerAddress.updateMany({ customer: req.user.userId, _id: { $ne: req.params.addressId } }, { $set: { isSelected: false } });
+  }
 
   const address = await CustomerAddress.findOneAndUpdate(
     { _id: req.params.addressId, customer: req.user.userId },
@@ -126,6 +146,8 @@ export const updateAddress = async (req, reply) => {
 export const selectAddress = async (req, reply) => {
   if (req.user.role !== "Customer") return reply.code(403).send({ message: "Only customers can manage addresses" });
   if (!mongoose.isValidObjectId(req.params.addressId)) return reply.code(400).send({ message: "Invalid address id" });
+
+  await CustomerAddress.updateMany({ customer: req.user.userId }, { $set: { isSelected: false } });
 
   const address = await CustomerAddress.findOneAndUpdate(
     { _id: req.params.addressId, customer: req.user.userId },

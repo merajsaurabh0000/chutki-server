@@ -26,12 +26,28 @@ if (fs.existsSync(serviceAccountPath)) {
       credential: cert(serviceAccount)
     });
     firebaseEnabled = true;
-    console.log("Firebase Admin successfully initialized using SDK v12+!");
+    console.log("Firebase Admin successfully initialized using local JSON file!");
   } catch (error) {
-    console.error("Failed to initialize Firebase Admin:", error.message);
+    console.error("Failed to initialize Firebase Admin from file:", error.message);
+  }
+} else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  try {
+    const serviceAccount = {
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      // Replace literal '\n' with actual newlines in case it's passed as a single string
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    };
+    initializeApp({
+      credential: cert(serviceAccount)
+    });
+    firebaseEnabled = true;
+    console.log("Firebase Admin successfully initialized using Environment Variables!");
+  } catch (error) {
+    console.error("Failed to initialize Firebase Admin from ENV variables:", error.message);
   }
 } else {
-  console.log("firebase-service-account.json not found. Push notifications are disabled (falling back to console logging).");
+  console.log("Firebase credentials not found (No JSON file or ENV variables). Push notifications are disabled (falling back to console logging).");
 }
 
 export const sendPushNotification = async (user, title, body) => {

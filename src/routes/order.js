@@ -1,4 +1,5 @@
 import {
+    cancelOrder,
     confirmOrder,
     getOrderById,
     getOrders,
@@ -17,6 +18,7 @@ export const orderRoutes = async (fastify, options) => {
     fastify.get("/order", getOrders);
     fastify.patch("/order/:orderId/status", updateOrderStatus);
     fastify.post("/order/:orderId/confirm", confirmOrder);
+    fastify.post("/order/:orderId/cancel", cancelOrder);
     fastify.get('/order/:orderId', getOrderById); 
 };
   
