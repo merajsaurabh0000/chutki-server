@@ -558,4 +558,36 @@ export const cancelOrder = async (req, reply) => {
   }
 };
 
-  
+export const submitDeliveryRating = async (req, reply) => {
+  try {
+    const { orderId } = req.params;
+    const { rating, feedback } = req.body;
+
+    if (!rating || typeof rating !== "number" || rating < 1 || rating > 5) {
+      return reply.status(400).send({ message: "Valid rating between 1 and 5 is required" });
+    }
+
+    const query = orderId.length === 24 && /^[0-9a-fA-F]{24}$/.test(orderId) 
+      ? { _id: orderId } 
+      : { orderId: orderId };
+
+    const order = await Order.findOne(query);
+
+    if (!order) {
+      return reply.status(404).send({ message: "Order not found" });
+    }
+
+    // if (order.customer.toString() !== req.user._id.toString()) {
+    //  return reply.status(403).send({ message: "Unauthorized" });
+    // }
+
+    order.deliveryRating = rating;
+    order.deliveryFeedback = feedback || "";
+    await order.save();
+
+    return reply.send({ message: "Rating submitted successfully", success: true });
+  } catch (error) {
+    console.error("Submit rating error:", error);
+    return reply.status(500).send({ message: "Failed to submit rating", error: error.message });
+  }
+};

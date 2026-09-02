@@ -65,6 +65,8 @@ const orderSchema= new mongoose.Schema({
         default: "available",
       },
       deliveryOtp: { type: String, default: null },
+      deliveryRating: { type: Number },
+      deliveryFeedback: { type: String },
       totalPrice: { type: Number, required: true },
       itemTotal: { type: Number, required: true, default: 0 },
       deliveryCharge: { type: Number, default: 0 },
