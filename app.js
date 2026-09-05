@@ -10,7 +10,7 @@ import Order from "./src/models/order.js";
 import { connectDB } from "./src/config/connect.js";
 import { PORT, validateEnvironment } from "./src/config/config.js";
 import { registerRoutes } from "./src/routes/index.js";
-
+ 
 validateEnvironment();
 await connectDB(process.env.MONGO_URI);
 const app = fastify({bodyLimit: 1024 * 1024, logger: {redact: ["req.headers.authorization", "req.headers.cookie", "req.body.password", "req.body.refreshToken"]}});

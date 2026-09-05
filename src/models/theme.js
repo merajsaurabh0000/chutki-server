@@ -7,7 +7,7 @@ const themeSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: false, index: true },
     priority: { type: Number, default: 0, index: true },
     startDate: { type: Date },
-    endDate: { type: Date },
+    endDate: { type: Date }, 
 
     primaryColor: { type: String, default: "#ff6f00" },
     headerGradientStart: { type: String, default: "#061827" },

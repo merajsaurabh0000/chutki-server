@@ -26,6 +26,7 @@
     "@fastify/multipart": "^8.3.1",
     "@fastify/rate-limit": "^9.1.0",
     "@fastify/session": "^10.9.0",
+    "@zavudev/sdk": "^0.56.0",
     "adm-zip": "^0.6.0",
     "adminjs": "^7.8.15",
     "bcryptjs": "^3.0.3",
@@ -39,6 +40,7 @@
     "firebase-admin": "^14.3.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.10.0",
+    "nodemailer": "^10.0.0",
     "nodemon": "^3.1.9",
     "razorpay": "^2.9.6"
   }

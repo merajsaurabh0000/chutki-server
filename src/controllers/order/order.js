@@ -6,6 +6,8 @@ import PaymentAttempt from "../../models/paymentAttempt.js";
 import VendorProduct from "../../models/vendorProduct.js";
 import Razorpay from "razorpay";
 import { sendPushNotification } from "../../services/notification.js";
+import NotificationSetting from "../../models/notificationSetting.js";
+import { sendEmailAlert, getOrderConfirmationHtml, getOrderStatusHtml } from "../../utils/emailService.js";
 
 const distanceInKm = (first, second) => {
     const earthRadiusKm = 6371;
@@ -34,27 +36,43 @@ const normalizeLocation = location => {
     };
 };
 
-const sendWhatsAppAlert = async (phone, text) => {
+const sendZavuAlert = async (phone, text, channel = "sms_oneway") => {
   try {
     const formattedPhone = String(phone || "").replace(/\D/g, "");
-    if (!formattedPhone || formattedPhone.length < 10) return;
+    if (!formattedPhone || formattedPhone.length < 10) {
+      console.log(`[DEBUG ZAVU] Skipped sending. Invalid phone number: ${phone}`);
+      return;
+    }
     
+    const payload = {
+      to: `+91${formattedPhone.slice(-10)}`,
+      channel: channel,
+      text: text
+    };
+    
+    console.log(`[DEBUG ZAVU] Attempting to send ${channel} to ${payload.to}...`);
+    console.log(`[DEBUG ZAVU] Message Text: "${payload.text}"`);
+
     const response = await fetch("https://api.zavu.dev/v1/messages", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${process.env.ZAVU_AUTH_TOKEN || "zv_live_9815951622c6611ba8236a4506d75c1000741bb208f7f160"}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        to: `+91${formattedPhone.slice(-10)}`,
-        channel: "whatsapp",
-        text: text
-      })
+      body: JSON.stringify(payload)
     });
+    
     const data = await response.json();
-    console.log(`Zavu WhatsApp Alert response:`, data);
+    
+    if (!response.ok) {
+      console.error(`[DEBUG ZAVU ERROR] API rejected request! Status: ${response.status}`);
+      console.error(`[DEBUG ZAVU ERROR] Details:`, JSON.stringify(data, null, 2));
+    } else {
+      console.log(`[DEBUG ZAVU SUCCESS] Sent successfully!`);
+      console.log(`[DEBUG ZAVU SUCCESS] Response:`, data);
+    }
   } catch (error) {
-    console.error(`Failed to send Zavu WhatsApp Alert: ${error.message}`);
+    console.error(`[DEBUG ZAVU FATAL] Network or parsing error: ${error.message}`);
   }
 };
 
@@ -122,15 +140,84 @@ export const getOrderQuote = async (req, reply) => {
     }
 };
 
+export const sendOrderConfirmationNotification = async (savedOrder, customerData) => {
+  console.log(`[DEBUG NOTIFICATION] Triggered for order ${savedOrder?.orderId}, Customer: ${customerData?.name || 'Unknown'}`);
+  try {
+    // Fetch Global Notification Settings
+    let settings = await NotificationSetting.findOne();
+    if (!settings) {
+      console.log(`[DEBUG NOTIFICATION] No NotificationSetting found in DB, using defaults`);
+      settings = { enableSMS: true, enableWhatsApp: true, enableEmail: true };
+    }
+    console.log(`[DEBUG NOTIFICATION] Settings applied: SMS=${settings.enableSMS}, WA=${settings.enableWhatsApp}, EMAIL=${settings.enableEmail}`);
+
+    const customerName = customerData.name || customerData.selectedAddress?.receiverName || "User";
+    const msgText = `Hi ${customerName}, your order #${savedOrder.orderId} has been confirmed. Total: ₹${savedOrder.totalPrice}. We'll notify you when it's on its way.`;
+    const receiverPhone = customerData.selectedAddress?.phone || customerData.phone;
+    const receiverName = customerData.selectedAddress?.receiverName || customerName;
+    const receiverMsgText = `Hi ${receiverName}, your order #${savedOrder.orderId} has been confirmed. Total: ₹${savedOrder.totalPrice}. We'll notify you when it's on its way.`;
+
+    // 1. SMS
+    if (settings.enableSMS) {
+      if (customerData.phone) {
+        console.log(`[DEBUG NOTIFICATION] Sending SMS to customer phone: ${customerData.phone}`);
+        sendZavuAlert(customerData.phone, msgText, "sms_oneway");
+      } else {
+        console.log(`[DEBUG NOTIFICATION] Customer phone missing for SMS`);
+      }
+      if (receiverPhone && String(receiverPhone) !== String(customerData.phone)) {
+        console.log(`[DEBUG NOTIFICATION] Sending SMS to receiver phone: ${receiverPhone}`);
+        sendZavuAlert(receiverPhone, receiverMsgText, "sms_oneway");
+      }
+    }
+
+    // 2. WhatsApp
+    if (settings.enableWhatsApp) {
+      if (customerData.phone) {
+        console.log(`[DEBUG NOTIFICATION] Sending WhatsApp to customer phone: ${customerData.phone}`);
+        sendZavuAlert(customerData.phone, msgText, "whatsapp");
+      }
+      if (receiverPhone && String(receiverPhone) !== String(customerData.phone)) {
+         console.log(`[DEBUG NOTIFICATION] Sending WhatsApp to receiver phone: ${receiverPhone}`);
+         sendZavuAlert(receiverPhone, receiverMsgText, "whatsapp");
+      }
+    }
+
+    // 3. Email
+    if (settings.enableEmail) {
+      if (customerData.email) {
+        console.log(`[DEBUG NOTIFICATION] Sending Email to: ${customerData.email}`);
+        const emailHtml = getOrderConfirmationHtml(
+          customerData.name || "User", 
+          savedOrder.orderId, 
+          savedOrder.totalPrice
+        );
+        sendEmailAlert(customerData.email, `Order Confirmed: #${savedOrder.orderId}`, emailHtml);
+      } else {
+        console.log(`[DEBUG NOTIFICATION] Customer email missing`);
+      }
+    }
+
+    console.log(`[DEBUG NOTIFICATION] Sending Push Notification`);
+    sendPushNotification(
+      customerData,
+      "Order Confirmed!",
+      `Your order #${savedOrder.orderId} has been placed successfully.`
+    );
+  } catch (error) {
+    console.error("[DEBUG NOTIFICATION ERROR] Failed to send order confirmation notifications:", error);
+  }
+};
+
 export const createOrder = async(req,reply)=>{
     try {
         const {userId}=req.user;
         const { items, branch} = req.body
         
-        const customerData= await Customer.findById(userId)
-        const branchData = await Branch.findById(branch)
+        const customerData = await Customer.findById(userId).populate("selectedAddress");
+        const branchData = await Branch.findById(branch);
 
-        if(!customerData){
+        if(!customerData){  
            return reply.status(404).send({ message: "Customer not found" });
         }
 
@@ -190,19 +277,9 @@ export const createOrder = async(req,reply)=>{
         savedOrder = await savedOrder.populate([
             { path: "items.item" },
         ]);
-
-        if (customerData.phone) {
-          sendWhatsAppAlert(
-            customerData.phone,
-            `Order Placed! Hello ${customerData.name || "Customer"}, your order #${savedOrder.orderId} of ₹${savedOrder.totalPrice} has been placed successfully. It will be delivered to: ${savedOrder.deliveryLocation?.address || "your address"}.`
-          );
-        }
-
-        sendPushNotification(
-          customerData,
-          "Order Placed Successfully!",
-          `Your order #${savedOrder.orderId} of ₹${savedOrder.totalPrice} has been placed.`
-        );
+        
+        // Send notifications
+        await sendOrderConfirmationNotification(savedOrder, customerData);
 
         return reply.status(201).send(savedOrder);
  
@@ -255,12 +332,7 @@ export const confirmOrder = async(req,reply)=>{
 
         req.server.io.to(orderId).emit('orderConfirmed',order);
 
-        if (order.customer?.phone) {
-          sendWhatsAppAlert(
-            order.customer.phone,
-            `Order Confirmed! Hello ${order.customer.name || "Customer"}, your order #${order.orderId} has been accepted by our delivery partner ${order.deliveryPartner?.name || "Delivery Agent"} and is on the way to the store. Delivery address: ${order.deliveryLocation?.address || "your address"}.`
-          );
-        }
+        // SMS notification removed as per user request (redundant since user already gets one on checkout)
 
         sendPushNotification(
           order.customer,
@@ -317,8 +389,8 @@ export const updateOrderStatus=async(req,reply)=>{
         }
 
         if (targetStatus === "delivered" && isStatusChange) {
-          if (otp && order.deliveryOtp && String(otp) !== String(order.deliveryOtp) && String(otp) !== "1234") {
-            return reply.code(400).send({ message: "Invalid Delivery OTP" });
+          if (!otp || (String(otp) !== String(order.deliveryOtp) && String(otp) !== "1234")) {
+            return reply.code(400).send({ message: "Invalid or Missing Delivery OTP" });
           }
         }
 
@@ -333,22 +405,25 @@ export const updateOrderStatus=async(req,reply)=>{
         }
         await order.save();
 
-        await order.populate("customer branch items.item deliveryPartner");
+        await order.populate({ path: "customer", populate: { path: "selectedAddress" } });
+        await order.populate("branch items.item deliveryPartner");
 
         req.server.io.to(orderId).emit("liveTrackingUpdates", order);
 
         if (isStatusChange) {
-          if (order.customer?.phone) {
+          const receiverPhone = order.customer?.selectedAddress?.phone || order.customer?.phone;
+          const customerName = order.customer?.name || order.customer?.selectedAddress?.receiverName || "Customer";
+          if (receiverPhone) {
             let statusMessage = "";
             if (targetStatus === "preparing") {
-              statusMessage = `Order is being packed! Hello ${order.customer.name || "Customer"}, your order #${order.orderId} is being prepared and packed by the store. We will notify you once it's out for delivery!`;
+              statusMessage = `Order is being packed! Hello ${customerName}, your order #${order.orderId} is being prepared and packed by the store. We will notify you once it's out for delivery!`;
             } else if (targetStatus === "arriving") {
-              statusMessage = `Order is on the way! Hello ${order.customer.name || "Customer"}, our delivery partner ${order.deliveryPartner?.name || "Delivery Agent"} is arriving at your address: ${order.deliveryLocation?.address || "your address"} with your order #${order.orderId}. Please share OTP ${order.deliveryOtp} to complete delivery.`;
+              statusMessage = `Hello ${customerName}, your order #${order.orderId} is out for delivery. Your Delivery OTP is ${order.deliveryOtp}.`;
             } else if (targetStatus === "delivered") {
-              statusMessage = `Order Delivered! Hello ${order.customer.name || "Customer"}, your order #${order.orderId} has been delivered successfully to: ${order.deliveryLocation?.address || "your address"}. Thank you for shopping with Haritgraam!`;
+              statusMessage = `${customerName}, your order #${order.orderId} has been delivered. Thanks for your purchase!`;
             }
             if (statusMessage) {
-              sendWhatsAppAlert(order.customer.phone, statusMessage);
+              sendZavuAlert(receiverPhone, statusMessage);
             }
           }
 
@@ -366,6 +441,11 @@ export const updateOrderStatus=async(req,reply)=>{
           }
           if (pushTitle) {
             sendPushNotification(order.customer, pushTitle, pushBody);
+            
+            if (order.customer?.email) {
+              const emailHtml = getOrderStatusHtml(order.customer.name, order.orderId, pushTitle, pushBody);
+              sendEmailAlert(order.customer.email, `${pushTitle} #${order.orderId}`, emailHtml);
+            }
           }
         }
 
@@ -536,8 +616,8 @@ export const cancelOrder = async (req, reply) => {
 
     // 4. Send WhatsApp Notification
     if (order.customer?.phone) {
-      const cancelMessage = `Order Cancelled: Hello ${order.customer.name || "Customer"}, your order #${order.orderId} has been cancelled successfully. ${order.payment?.status === "refund_pending" || order.payment?.status === "refunded" ? `A full refund of ₹${order.totalPrice} has been initiated to your original payment method.` : ""}`;
-      sendWhatsAppAlert(order.customer.phone, cancelMessage);
+      const cancelMessage = `Order Cancelled: Hello ${order.customer.name || "User"}, your order #${order.orderId} has been cancelled successfully. ${order.payment?.status === "refund_pending" || order.payment?.status === "refunded" ? `A full refund of ₹${order.totalPrice} has been initiated to your original payment method.` : ""}`;
+      sendZavuAlert(order.customer.phone, cancelMessage);
     }
 
     // 5. Send Push Notification

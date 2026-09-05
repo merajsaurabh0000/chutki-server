@@ -2011,4 +2011,25 @@ export const adminApiRoutes = async fastify => {
     await banner.deleteOne();
     return reply.code(204).send();
   });
+  fastify.get("/admin/settings/notifications", { preHandler: [requireAdminToken] }, async (request, reply) => {
+    let settings = await Models.NotificationSetting.findOne();
+    if (!settings) {
+      settings = await Models.NotificationSetting.create({});
+    }
+    return settings;
+  });
+
+  fastify.put("/admin/settings/notifications", { preHandler: [requireAdminToken] }, async (request, reply) => {
+    let settings = await Models.NotificationSetting.findOne();
+    if (!settings) {
+      settings = new Models.NotificationSetting();
+    }
+    
+    if (request.body?.enableSMS !== undefined) settings.enableSMS = Boolean(request.body.enableSMS);
+    if (request.body?.enableWhatsApp !== undefined) settings.enableWhatsApp = Boolean(request.body.enableWhatsApp);
+    if (request.body?.enableEmail !== undefined) settings.enableEmail = Boolean(request.body.enableEmail);
+
+    await settings.save();
+    return settings;
+  });
 };

@@ -41,7 +41,7 @@ export const sendOtp = async (req, reply) => {
       },
       body: JSON.stringify({
         to: `+91${phone}`,
-        channel: "whatsapp",
+        channel: "sms_oneway",
         text: `Your Haritgraam OTP is ${otp}. Valid for 5 minutes.`
       })
     });

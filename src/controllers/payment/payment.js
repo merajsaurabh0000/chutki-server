@@ -158,6 +158,16 @@ export const verifyPayment = async (req, reply) => {
       createdOrder.pickupLocation = {...branch.location, address: branch.address || ""}; await createdOrder.save({session});
       attempt.order = createdOrder._id; await attempt.save({session});
     });
+    
+    // Send order confirmation SMS, Email, etc for Razorpay Online Orders
+    try {
+      const { sendOrderConfirmationNotification } = await import("../order/order.js");
+      const customer = await Customer.findById(req.user.userId).populate("selectedAddress");
+      await sendOrderConfirmationNotification(createdOrder, customer);
+    } catch (err) {
+      console.log("Error triggering notifications for razorpay order:", err);
+    }
+    
     return reply.send(createdOrder);
   } catch (error) { return reply.code(409).send({message: error.message || "Could not create order"}); }
   finally { await session.endSession(); }

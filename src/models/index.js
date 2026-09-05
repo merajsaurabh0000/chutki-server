@@ -11,6 +11,7 @@ import Theme from "./theme.js";
 import Vendor from "./vendor.js";
 import AdminUser from "./adminUser.js";
 import VendorProduct from "./vendorProduct.js";
+import NotificationSetting from "./notificationSetting.js";
 import CustomerAddress from "./customerAddress.js";
 import UploadedImage from "./uploadedImage.js";
 import Review from "./review.js";
@@ -31,6 +32,7 @@ export {
   Vendor,
   AdminUser,
   VendorProduct,
+  NotificationSetting,
   CustomerAddress,
   UploadedImage,
   Review,
