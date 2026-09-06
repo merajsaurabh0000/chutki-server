@@ -4,6 +4,7 @@ import Product from "../../models/products.js";
 import VendorProduct from "../../models/vendorProduct.js";
 import jwt from "jsonwebtoken";
 import { Customer } from "../../models/user.js";
+import { redis } from "../../config/redis.js";
 
 export const isDemoRequest = async (req) => {
   try {
@@ -130,6 +131,13 @@ export const getProductsByCategoryId = async (req, reply) => {
       return reply.send(products);
     }
 
+    if (redis) {
+      const cachedProducts = await redis.get(`products_category_${categoryId}`);
+      if (cachedProducts) {
+        return reply.send(JSON.parse(cachedProducts));
+      }
+    }
+
     const products = await Product.find({
       $or: [
         { category: categoryId },
@@ -138,6 +146,10 @@ export const getProductsByCategoryId = async (req, reply) => {
     })
       .select("-category")
       .exec();
+
+    if (redis) {
+      await redis.set(`products_category_${categoryId}`, JSON.stringify(products), "EX", 3600);
+    }
 
     return reply.send(products);
   } catch (error) {
@@ -154,7 +166,20 @@ export const getAllProducts = async (req, reply) => {
       return reply.send(products);
     }
 
+    if (redis) {
+      const cachedProducts = await redis.get("all_products");
+      if (cachedProducts) {
+        return reply.send(JSON.parse(cachedProducts));
+      }
+    }
+
     const products = await Product.find().exec();
+
+    if (redis) {
+      // Cache for 1 hour
+      await redis.set("all_products", JSON.stringify(products), "EX", 3600);
+    }
+
     return reply.send(products);
   } catch (error) {
     return reply.status(500).send({ message: "An error occurred", error });

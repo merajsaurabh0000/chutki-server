@@ -1,4 +1,5 @@
 import Order from "../../models/order.js";
+import Coupon from "../../models/coupon.js";
 import Branch from "../../models/branch.js";
 import { Customer, DeliveryPartner } from "../../models/user.js";
 import Product from "../../models/products.js";
@@ -78,7 +79,7 @@ const sendZavuAlert = async (phone, text, channel = "sms_oneway") => {
 
 const roundMoney = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
-const calculateOrderPrice = async (items, branch) => {
+const calculateOrderPrice = async (items, branch, couponCode = null) => {
     if (!Array.isArray(items) || items.length === 0) {
       throw new Error("Cart is empty");
     }
@@ -114,7 +115,30 @@ const calculateOrderPrice = async (items, branch) => {
       roundMoney(itemTotal >= branch.freeDeliveryThreshold ? 0 : branch.deliveryCharge);
     const handlingCharge = roundMoney(branch.handlingCharge);
     const surgeCharge = roundMoney(branch.surgeEnabled ? branch.surgeCharge : 0);
-    const totalPrice = roundMoney(itemTotal + deliveryCharge + handlingCharge + surgeCharge);
+    let discountAmount = 0;
+    let appliedCoupon = null;
+
+    if (couponCode) {
+      const coupon = await Coupon.findOne({ code: couponCode.toUpperCase(), isActive: true, vendor: branch.vendor });
+      if (coupon) {
+        if (!coupon.expiryDate || new Date(coupon.expiryDate) > new Date()) {
+          if (itemTotal >= coupon.minOrderValue) {
+            appliedCoupon = coupon._id;
+            if (coupon.discountType === "flat") {
+              discountAmount = coupon.discountValue;
+            } else if (coupon.discountType === "percentage") {
+              discountAmount = (itemTotal * coupon.discountValue) / 100;
+              if (coupon.maxDiscountAmount > 0 && discountAmount > coupon.maxDiscountAmount) {
+                discountAmount = coupon.maxDiscountAmount;
+              }
+            }
+            discountAmount = roundMoney(discountAmount);
+          }
+        }
+      }
+    }
+
+    const totalPrice = roundMoney(itemTotal + deliveryCharge + handlingCharge + surgeCharge - discountAmount);
 
     return {
       normalizedItems,
@@ -122,18 +146,20 @@ const calculateOrderPrice = async (items, branch) => {
       deliveryCharge,
       handlingCharge,
       surgeCharge,
+      discountAmount,
+      appliedCoupon,
       totalPrice,
     };
 };
 
 export const getOrderQuote = async (req, reply) => {
     try {
-      const {items, branch} = req.body;
+      const {items, branch, couponCode} = req.body;
       const branchData = await Branch.findById(branch);
       if (!branchData || !branchData.isActive) {
         return reply.status(400).send({message: "Selected branch is unavailable"});
       }
-      const pricing = await calculateOrderPrice(items, branchData);
+      const pricing = await calculateOrderPrice(items, branchData, couponCode);
       return reply.send(pricing);
     } catch (error) {
       return reply.status(400).send({message: error.message});
@@ -212,7 +238,7 @@ export const sendOrderConfirmationNotification = async (savedOrder, customerData
 export const createOrder = async(req,reply)=>{
     try {
         const {userId}=req.user;
-        const { items, branch} = req.body
+        const { items, branch, couponCode} = req.body
         
         const customerData = await Customer.findById(userId).populate("selectedAddress");
         const branchData = await Branch.findById(branch);
@@ -248,7 +274,7 @@ export const createOrder = async(req,reply)=>{
            });
         }
 
-        const pricing = await calculateOrderPrice(items, branchData);
+        const pricing = await calculateOrderPrice(items, branchData, couponCode);
 
         const newOrder = new Order({
             customer:userId,
@@ -259,6 +285,8 @@ export const createOrder = async(req,reply)=>{
             deliveryCharge: pricing.deliveryCharge,
             handlingCharge: pricing.handlingCharge,
             surgeCharge: pricing.surgeCharge,
+            discountAmount: pricing.discountAmount,
+            coupon: pricing.appliedCoupon,
             totalPrice: pricing.totalPrice,
             deliveryLocation:{
                 latitude: customerData.liveLocation.latitude,

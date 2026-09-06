@@ -1,5 +1,6 @@
 import Category from "../../models/category.js";
 import { getNearbyCatalog, getQueryLocation, isDemoRequest } from "./product.js";
+import { redis } from "../../config/redis.js";
 
 export const getAllCategories = async (req, reply) => {
   try {
@@ -19,7 +20,19 @@ export const getAllCategories = async (req, reply) => {
       return reply.send(categories);
     }
 
+    if (redis) {
+      const cachedCategories = await redis.get("all_categories");
+      if (cachedCategories) {
+        return reply.send(JSON.parse(cachedCategories));
+      }
+    }
+
     const categories = await Category.find();
+
+    if (redis) {
+      await redis.set("all_categories", JSON.stringify(categories), "EX", 3600);
+    }
+
     return reply.send(categories);
   } catch (error) {
     return reply.status(500).send({ message: "An error occurred", error });

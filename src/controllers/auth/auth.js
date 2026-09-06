@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { Customer, DeliveryPartner } from "../../models/user.js";
 import RefreshSession from "../../models/refreshSession.js";
+import { redis } from "../../config/redis.js";
 
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
 const safeUser = user => {
@@ -29,8 +30,13 @@ export const sendOtp = async (req, reply) => {
 
   // Generate random 6-digit OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  
   // Cache the OTP for 5 minutes
-  otpCache.set(phone, { otp, expires: Date.now() + 5 * 60000 });
+  if (redis) {
+    await redis.set(`otp_${phone}`, otp, "EX", 300);
+  } else {
+    otpCache.set(phone, { otp, expires: Date.now() + 5 * 60000 });
+  }
 
   try {
     const response = await fetch("https://api.zavu.dev/v1/messages", {
@@ -82,23 +88,33 @@ export const loginCustomer = async (req, reply) => {
     }
   }
 
-  // Zavu OTP Verification from Local Memory Cache
-  const cachedOtpRecord = otpCache.get(phone);
-  if (!cachedOtpRecord) {
+  // Redis / Zavu OTP Verification
+  let cachedOtp = null;
+  if (redis) {
+    cachedOtp = await redis.get(`otp_${phone}`);
+  } else {
+    const cachedOtpRecord = otpCache.get(phone);
+    if (cachedOtpRecord && cachedOtpRecord.expires > Date.now()) {
+      cachedOtp = cachedOtpRecord.otp;
+    } else {
+      otpCache.delete(phone);
+    }
+  }
+
+  if (!cachedOtp) {
     return reply.code(401).send({ message: "OTP expired or not sent" });
   }
 
-  if (cachedOtpRecord.expires < Date.now()) {
-    otpCache.delete(phone);
-    return reply.code(401).send({ message: "OTP expired" });
-  }
-
-  if (cachedOtpRecord.otp !== otp) {
+  if (cachedOtp !== otp) {
     return reply.code(401).send({ message: "Invalid OTP" });
   }
 
   // Clear OTP from memory cache after successful verification
-  otpCache.delete(phone);
+  if (redis) {
+    await redis.del(`otp_${phone}`);
+  } else {
+    otpCache.delete(phone);
+  }
 
   try {
     const fcmToken = req.body?.fcmToken || null;

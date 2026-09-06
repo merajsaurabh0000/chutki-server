@@ -7,6 +7,7 @@ import PaymentAttempt from "../../models/paymentAttempt.js";
 import { Customer } from "../../models/user.js";
 import VendorProduct from "../../models/vendorProduct.js";
 import CustomerAddress from "../../models/customerAddress.js";
+import Coupon from "../../models/coupon.js";
 
 const razorpay = () => new Razorpay({key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET});
 class AvailabilityError extends Error {
@@ -32,7 +33,7 @@ export const validSignature = (value, signature, secret) => {
 
 const roundMoney = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
-const priceCart = async (items, branch) => {
+const priceCart = async (items, branch, couponCode) => {
   if (!Array.isArray(items) || !items.length || items.length > 100) throw new Error("Cart is empty or too large");
   const normalizedInput = items.map(item => ({product: String(item.item || item.product), count: Number(item.count)}));
   if (normalizedInput.some(item => !mongoose.isValidObjectId(item.product) || !Number.isInteger(item.count) || item.count < 1 || item.count > 99)) throw new Error("Invalid cart item");
@@ -56,14 +57,51 @@ const priceCart = async (items, branch) => {
     return {product: product._id, count: input.count, name: product.name, image: product.image, quantity: product.quantity, unitPrice};
   });
   const itemTotal = roundMoney(priced.reduce((sum, item) => sum + item.unitPrice * item.count, 0));
-  const deliveryCharge = roundMoney(itemTotal >= branch.freeDeliveryThreshold ? 0 : branch.deliveryCharge);
+  
+  let discountAmount = 0;
+  let appliedCouponId = null;
+  
+  if (couponCode) {
+    const coupon = await Coupon.findOne({
+      code: couponCode.toUpperCase(),
+      vendor: branch.vendor,
+      isActive: true,
+      $or: [{ expiryDate: { $gt: new Date() } }, { expiryDate: null }]
+    });
+
+    if (coupon) {
+      if (itemTotal >= coupon.minOrderValue) {
+        if (coupon.discountType === 'percentage') {
+          discountAmount = (itemTotal * coupon.discountValue) / 100;
+          if (coupon.maxDiscountAmount > 0 && discountAmount > coupon.maxDiscountAmount) {
+            discountAmount = coupon.maxDiscountAmount;
+          }
+        } else {
+          discountAmount = coupon.discountValue;
+        }
+        discountAmount = roundMoney(discountAmount);
+        
+        if (discountAmount > itemTotal) {
+          discountAmount = itemTotal;
+        }
+        
+        appliedCouponId = coupon._id;
+      } else {
+        throw new Error(`Minimum order value of ₹${coupon.minOrderValue} is required for this coupon`);
+      }
+    } else {
+      throw new Error(`Invalid or expired coupon code`);
+    }
+  }
+
+  const deliveryCharge = roundMoney((itemTotal - discountAmount) >= branch.freeDeliveryThreshold ? 0 : branch.deliveryCharge);
   const handlingCharge = roundMoney(branch.handlingCharge);
   const surgeCharge = roundMoney(branch.surgeEnabled ? branch.surgeCharge : 0);
-  const totalPrice = roundMoney(itemTotal + deliveryCharge + handlingCharge + surgeCharge);
-  return {items: priced, itemTotal, deliveryCharge, handlingCharge, surgeCharge, totalPrice};
+  const totalPrice = roundMoney(itemTotal - discountAmount + deliveryCharge + handlingCharge + surgeCharge);
+  return {items: priced, itemTotal, deliveryCharge, handlingCharge, surgeCharge, discountAmount, coupon: appliedCouponId, totalPrice};
 };
 
-const quoteFor = async (customerId, items) => {
+const quoteFor = async (customerId, items, couponCode) => {
   const customer = await Customer.findById(customerId).lean();
   const selectedAddress = customer?.selectedAddress
     ? await CustomerAddress.findOne({ _id: customer.selectedAddress, customer: customerId }).lean()
@@ -85,7 +123,7 @@ const quoteFor = async (customerId, items) => {
   }
   let bestAvailabilityError;
   for (const row of eligible) {
-    try { return {branch: row.branch, customer, selectedAddress, ...(await priceCart(items, row.branch))}; }
+    try { return {branch: row.branch, customer, selectedAddress, ...(await priceCart(items, row.branch, couponCode))}; }
     catch (error) {
       if (error instanceof AvailabilityError && (!bestAvailabilityError || error.unavailableItemIds.length < bestAvailabilityError.unavailableItemIds.length)) bestAvailabilityError = error;
       else if (!(error instanceof AvailabilityError)) throw error;
@@ -96,19 +134,36 @@ const quoteFor = async (customerId, items) => {
 
 export const checkoutQuote = async (req, reply) => {
   try {
-    const value = await quoteFor(req.user.userId, req.body?.items);
+    const value = await quoteFor(req.user.userId, req.body?.items, req.body?.couponCode);
     return reply.send({...value, branch: {id: value.branch._id, name: value.branch.name, address: value.branch.address}, items: undefined, customer: undefined});
   } catch (error) { return reply.code(400).send({message: error.message, code: error.code, unavailableItemIds: error.unavailableItemIds || []}); }
 };
 
+export const availableCoupons = async (req, reply) => {
+  try {
+    const value = await quoteFor(req.user.userId, req.body?.items);
+    const vendorId = value.branch.vendor;
+    
+    const coupons = await Coupon.find({ 
+      vendor: vendorId, 
+      isActive: true, 
+      $or: [{ expiryDate: { $gt: new Date() } }, { expiryDate: null }] 
+    }).lean();
+    
+    return reply.send({ coupons });
+  } catch (error) { 
+    return reply.code(400).send({message: error.message, code: error.code, coupons: []}); 
+  }
+};
+
 export const createPayment = async (req, reply) => {
   try {
-    const quote = await quoteFor(req.user.userId, req.body?.items);
+    const quote = await quoteFor(req.user.userId, req.body?.items, req.body?.couponCode);
     if (!quote.selectedAddress) {
       return reply.code(400).send({ message: "Please complete and select a delivery address", code: "ADDRESS_REQUIRED" });
     }
     const gatewayOrder = await razorpay().orders.create({amount: Math.round(quote.totalPrice * 100), currency: "INR", receipt: `pay_${crypto.randomUUID()}`, notes: {customerId: req.user.userId}});
-    const attempt = await PaymentAttempt.create({customer: req.user.userId, branch: quote.branch._id, items: quote.items, itemTotal: quote.itemTotal, deliveryCharge: quote.deliveryCharge, handlingCharge: quote.handlingCharge, surgeCharge: quote.surgeCharge, totalPrice: quote.totalPrice, razorpayOrderId: gatewayOrder.id, expiresAt: new Date(Date.now() + 15 * 60000)});
+    const attempt = await PaymentAttempt.create({customer: req.user.userId, branch: quote.branch._id, items: quote.items, itemTotal: quote.itemTotal, discountAmount: quote.discountAmount, coupon: quote.coupon, deliveryCharge: quote.deliveryCharge, handlingCharge: quote.handlingCharge, surgeCharge: quote.surgeCharge, totalPrice: quote.totalPrice, razorpayOrderId: gatewayOrder.id, expiresAt: new Date(Date.now() + 15 * 60000)});
     return reply.code(201).send({attemptId: attempt._id, razorpayOrderId: gatewayOrder.id, amount: gatewayOrder.amount, currency: "INR", keyId: process.env.RAZORPAY_KEY_ID});
   } catch (error) {
     const message = error.error?.description || error.message || "Unable to begin payment";
@@ -154,7 +209,7 @@ export const verifyPayment = async (req, reply) => {
         selectedAddress.formattedAddress,
       ].filter(Boolean).join(", ");
       const branch = await Branch.findById(attempt.branch).session(session);
-      [createdOrder] = await Order.create([{customer: customer._id, vendor: branch.vendor, branch: attempt.branch, items: attempt.items.map(item => ({id: item.product, item: item.product, count: item.count, name: item.name, image: item.image, quantity: item.quantity, unitPrice: item.unitPrice})), itemTotal: attempt.itemTotal, deliveryCharge: attempt.deliveryCharge, handlingCharge: attempt.handlingCharge, surgeCharge: attempt.surgeCharge, totalPrice: attempt.totalPrice, deliveryLocation: {...selectedAddress.location, address: deliveryAddressText}, pickupLocation: {latitude: 0, longitude: 0, address: ""}, payment: {status: "paid", attempt: attempt._id, paymentId}}], {session});
+      [createdOrder] = await Order.create([{customer: customer._id, vendor: branch.vendor, branch: attempt.branch, items: attempt.items.map(item => ({id: item.product, item: item.product, count: item.count, name: item.name, image: item.image, quantity: item.quantity, unitPrice: item.unitPrice})), itemTotal: attempt.itemTotal, discountAmount: attempt.discountAmount, coupon: attempt.coupon, deliveryCharge: attempt.deliveryCharge, handlingCharge: attempt.handlingCharge, surgeCharge: attempt.surgeCharge, totalPrice: attempt.totalPrice, deliveryLocation: {...selectedAddress.location, address: deliveryAddressText}, pickupLocation: {latitude: 0, longitude: 0, address: ""}, payment: {status: "paid", attempt: attempt._id, paymentId}}], {session});
       createdOrder.pickupLocation = {...branch.location, address: branch.address || ""}; await createdOrder.save({session});
       attempt.order = createdOrder._id; await attempt.save({session});
     });

@@ -69,6 +69,8 @@ const orderSchema= new mongoose.Schema({
       deliveryFeedback: { type: String },
       totalPrice: { type: Number, required: true },
       itemTotal: { type: Number, required: true, default: 0 },
+      discountAmount: { type: Number, default: 0 },
+      coupon: { type: mongoose.Schema.Types.ObjectId, ref: "Coupon" },
       deliveryCharge: { type: Number, default: 0 },
       handlingCharge: { type: Number, default: 0 },
       surgeCharge: { type: Number, default: 0 },

@@ -15,6 +15,7 @@ import NotificationSetting from "./notificationSetting.js";
 import CustomerAddress from "./customerAddress.js";
 import UploadedImage from "./uploadedImage.js";
 import Review from "./review.js";
+import Coupon from "./coupon.js";
 
 export {
   Order,
@@ -36,4 +37,5 @@ export {
   CustomerAddress,
   UploadedImage,
   Review,
+  Coupon,
 };

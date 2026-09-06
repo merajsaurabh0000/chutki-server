@@ -11,6 +11,7 @@ import { CLOUDINARY_CLOUD_NAME } from "../config/config.js";
 import cloudinary from "../config/cloudinary.js";
 import { refund } from "../controllers/payment/payment.js";
 import AdmZip from "adm-zip";
+import { redis } from "../config/redis.js";
 
 const encodeCloudinaryKey = imageKey => encodeURI(imageKey);
 const withoutFileExtension = key => key.replace(/\.[^./]+$/, "");
@@ -397,6 +398,15 @@ const normalizeVendorPayload = body => {
 };
 
 const getDashboardData = async request => {
+  const cacheKey = request.admin.role === "super_admin" 
+    ? "admin_dashboard_stats_super_admin" 
+    : `admin_dashboard_stats_vendor_${request.admin.vendorId}`;
+
+  if (redis) {
+    const cached = await redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  }
+
   if (request.admin.role !== "super_admin") {
     const vendor = request.admin.vendorId
       ? await Models.Vendor.findById(request.admin.vendorId).lean()
@@ -431,7 +441,7 @@ const getDashboardData = async request => {
       ]),
     ]);
 
-    return {
+    const result = {
       stats: {
         orders,
         customers: 0,
@@ -446,6 +456,12 @@ const getDashboardData = async request => {
       vendor: toVendorDto(vendor),
       primaryBranch: primaryBranch ? toBranchDto(primaryBranch) : null,
     };
+
+    if (redis) {
+      await redis.set(cacheKey, JSON.stringify(result), "EX", 900);
+    }
+
+    return result;
   }
 
   const [orders, customers, products, vendors, banners, activeTheme, revenue] =
@@ -462,7 +478,7 @@ const getDashboardData = async request => {
       ]),
     ]);
 
-  return {
+  const result = {
     stats: {
       orders,
       customers,
@@ -475,6 +491,12 @@ const getDashboardData = async request => {
     },
     activeTheme: activeTheme ? toThemeDto(activeTheme) : null,
   };
+
+  if (redis) {
+    await redis.set(cacheKey, JSON.stringify(result), "EX", 900);
+  }
+
+  return result;
 };
 
 const uploadBannerFile = async (file, bannerId) => {
@@ -1855,6 +1877,93 @@ export const adminApiRoutes = async fastify => {
     return reply.code(204).send();
   });
 
+
+  const toCouponDto = coupon => ({
+    id: String(coupon._id),
+    code: coupon.code,
+    discountType: coupon.discountType,
+    discountValue: coupon.discountValue,
+    minOrderValue: coupon.minOrderValue,
+    maxDiscountAmount: coupon.maxDiscountAmount,
+    isActive: coupon.isActive,
+    expiryDate: coupon.expiryDate,
+    vendorId: String(coupon.vendor),
+    createdAt: coupon.createdAt,
+  });
+
+  fastify.get("/admin/coupons", { preHandler: [requireAdminToken] }, async request => {
+    const vendorId = getRequiredVendorId(request);
+    if (!vendorId && request.admin.role !== "super_admin") return { coupons: [] };
+
+    const query = vendorId ? { vendor: vendorId } : {};
+    const coupons = await Models.Coupon.find(query).sort({ createdAt: -1 }).lean();
+    return { coupons: coupons.map(toCouponDto) };
+  });
+
+  fastify.post("/admin/coupons", { preHandler: [requireAdminToken] }, async (request, reply) => {
+    const vendorId = getRequiredVendorId(request, reply);
+    if (!vendorId) return;
+
+    const { code, discountType, discountValue, minOrderValue, maxDiscountAmount, isActive, expiryDate } = request.body;
+
+    if (!code || !discountType || discountValue == null) {
+      return reply.code(400).send({ message: "Code, discount type, and value are required" });
+    }
+
+    const existing = await Models.Coupon.findOne({ code: code.toUpperCase(), vendor: vendorId });
+    if (existing) {
+      return reply.code(400).send({ message: "Coupon code already exists for your store" });
+    }
+
+    const coupon = await Models.Coupon.create({
+      code: code.toUpperCase(),
+      discountType,
+      discountValue: Number(discountValue),
+      minOrderValue: Number(minOrderValue || 0),
+      maxDiscountAmount: Number(maxDiscountAmount || 0),
+      isActive: isActive ?? true,
+      expiryDate: expiryDate ? new Date(expiryDate) : null,
+      vendor: vendorId,
+    });
+
+    return toCouponDto(coupon);
+  });
+
+  fastify.put("/admin/coupons/:couponId", { preHandler: [requireAdminToken] }, async (request, reply) => {
+    const vendorId = getRequiredVendorId(request, reply);
+    if (!vendorId) return;
+
+    const { code, discountType, discountValue, minOrderValue, maxDiscountAmount, isActive, expiryDate } = request.body;
+    
+    const coupon = await Models.Coupon.findOne({ _id: request.params.couponId, vendor: vendorId });
+    if (!coupon) return reply.code(404).send({ message: "Coupon not found" });
+
+    if (code && code.toUpperCase() !== coupon.code) {
+      const existing = await Models.Coupon.findOne({ code: code.toUpperCase(), vendor: vendorId });
+      if (existing) return reply.code(400).send({ message: "Coupon code already exists" });
+      coupon.code = code.toUpperCase();
+    }
+
+    if (discountType) coupon.discountType = discountType;
+    if (discountValue != null) coupon.discountValue = Number(discountValue);
+    if (minOrderValue != null) coupon.minOrderValue = Number(minOrderValue);
+    if (maxDiscountAmount != null) coupon.maxDiscountAmount = Number(maxDiscountAmount);
+    if (isActive != null) coupon.isActive = isActive;
+    if (expiryDate !== undefined) coupon.expiryDate = expiryDate ? new Date(expiryDate) : null;
+
+    await coupon.save();
+    return toCouponDto(coupon);
+  });
+
+  fastify.delete("/admin/coupons/:couponId", { preHandler: [requireAdminToken] }, async (request, reply) => {
+    const vendorId = getRequiredVendorId(request, reply);
+    if (!vendorId) return;
+
+    const coupon = await Models.Coupon.findOneAndDelete({ _id: request.params.couponId, vendor: vendorId });
+    if (!coupon) return reply.code(404).send({ message: "Coupon not found" });
+
+    return { success: true };
+  });
 
   fastify.get("/admin/banners", { preHandler: [requireAdminToken] }, async () => {
     const banners = await Models.Banner.find().sort({ sortOrder: 1, createdAt: -1 }).lean();

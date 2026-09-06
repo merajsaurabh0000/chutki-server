@@ -11,6 +11,8 @@ const schema = new mongoose.Schema({
   branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch", required: true },
   items: { type: [itemSchema], required: true },
   itemTotal: Number, deliveryCharge: Number, handlingCharge: Number, surgeCharge: Number,
+  discountAmount: { type: Number, default: 0 },
+  coupon: { type: mongoose.Schema.Types.ObjectId, ref: "Coupon" },
   totalPrice: { type: Number, required: true },
   currency: { type: String, default: "INR" },
   razorpayOrderId: { type: String, required: true, unique: true },
