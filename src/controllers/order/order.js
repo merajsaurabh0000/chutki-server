@@ -308,6 +308,11 @@ export const createOrder = async(req,reply)=>{
         
         // Send notifications
         await sendOrderConfirmationNotification(savedOrder, customerData);
+        
+        // Notify delivery boys
+        if (req.server.io) {
+            req.server.io.to(`delivery:${savedOrder.branch}`).emit("newOrderAvailable", savedOrder);
+        }
 
         return reply.status(201).send(savedOrder);
  

@@ -34,11 +34,18 @@ app.ready().then(() => {
     try { socket.user = jwt.verify(socket.handshake.auth?.token, process.env.ACCESS_TOKEN_SECRET); next(); }
     catch { next(new Error("Unauthorized")); }
   });
-  app.io.on("connection", socket => socket.on("joinRoom", async orderId => {
-    const order = await Order.findById(orderId).lean();
-    const allowed = order && (String(order.customer) === socket.user.userId || String(order.deliveryPartner) === socket.user.userId);
-    if (allowed) socket.join(String(orderId));
-  }));
+  app.io.on("connection", socket => {
+    socket.on("joinRoom", async orderId => {
+      const order = await Order.findById(orderId).lean();
+      const allowed = order && (String(order.customer) === socket.user.userId || String(order.deliveryPartner) === socket.user.userId);
+      if (allowed) socket.join(String(orderId));
+    });
+    socket.on("joinDeliveryRoom", async branchId => {
+      if (socket.user.role === "DeliveryPartner") {
+        socket.join(`delivery:${branchId}`);
+      }
+    });
+  });
 });
 
 const shutdown = async signal => { app.log.info({signal}, "shutting down"); await app.close(); await mongoose.disconnect(); process.exit(0); };
