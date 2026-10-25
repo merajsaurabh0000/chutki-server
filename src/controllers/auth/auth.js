@@ -12,7 +12,7 @@ const safeUser = user => {
 };
 const getUser = async decoded => {
   const Model = decoded.role === "Customer" ? Customer : decoded.role === "DeliveryPartner" ? DeliveryPartner : null;
-  return Model ? Model.findById(decoded.userId) : null;
+  return Model ? Model.findById(decoded.userId).populate("selectedAddress") : null;
 };
 const issueTokens = async user => {
   const payload = { userId: user._id.toString(), role: user.role };

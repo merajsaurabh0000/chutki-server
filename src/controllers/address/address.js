@@ -98,13 +98,16 @@ export const createAddress = async (req, reply) => {
   });
 
   if (address.isSelected) {
-    await Customer.findByIdAndUpdate(req.user.userId, {
-      $set: {
-        selectedAddress: address._id,
-        liveLocation: address.location,
-        address: [address.house, address.area, address.formattedAddress].filter(Boolean).join(", "),
-      },
-    });
+    const customer = await Customer.findById(req.user.userId);
+    const updateFields = {
+      selectedAddress: address._id,
+      liveLocation: address.location,
+      address: [address.house, address.area, address.formattedAddress].filter(Boolean).join(", "),
+    };
+    if (!customer?.phone && address.phone) {
+      updateFields.phone = Number(address.phone);
+    }
+    await Customer.findByIdAndUpdate(req.user.userId, { $set: updateFields });
   }
 
   return reply.code(201).send({ address: toAddressDto(address) });
@@ -157,13 +160,16 @@ export const selectAddress = async (req, reply) => {
 
   if (!address) return reply.code(404).send({ message: "Address not found" });
 
-  await Customer.findByIdAndUpdate(req.user.userId, {
-    $set: {
-      selectedAddress: address._id,
-      liveLocation: address.location,
-      address: [address.house, address.area, address.formattedAddress].filter(Boolean).join(", "),
-    },
-  });
+  const customer = await Customer.findById(req.user.userId);
+  const updateFields = {
+    selectedAddress: address._id,
+    liveLocation: address.location,
+    address: [address.house, address.area, address.formattedAddress].filter(Boolean).join(", "),
+  };
+  if (!customer?.phone && address.phone) {
+    updateFields.phone = Number(address.phone);
+  }
+  await Customer.findByIdAndUpdate(req.user.userId, { $set: updateFields });
 
   return reply.send({ address: toAddressDto(address) });
 };
