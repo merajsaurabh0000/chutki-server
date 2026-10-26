@@ -96,6 +96,9 @@ const calculateOrderPrice = async (items, branch, couponCode = null) => {
         throw new Error("Cart contains an invalid product or quantity");
       }
 
+      const rawUnitPrice = product.discountPrice ?? product.price;
+      const unitPrice = Math.round(Number(rawUnitPrice) || 0);
+
       return {
         id: product._id,
         item: product._id,
@@ -103,13 +106,12 @@ const calculateOrderPrice = async (items, branch, couponCode = null) => {
         name: product.name,
         image: product.image,
         quantity: product.quantity,
-        unitPrice: product.price,
+        unitPrice,
       };
     });
 
     const itemTotal = roundMoney(normalizedItems.reduce((total, item) => {
-      const product = productMap.get(String(item.item));
-      return total + product.price * item.count;
+      return total + item.unitPrice * item.count;
     }, 0));
     const deliveryCharge =
       roundMoney(itemTotal >= branch.freeDeliveryThreshold ? 0 : branch.deliveryCharge);

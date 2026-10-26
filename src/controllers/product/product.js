@@ -44,8 +44,10 @@ export const getQueryLocation = query => {
 
 const toAppProduct = (vendorProduct, branch) => {
   const product = vendorProduct.product;
-  const price = vendorProduct.price ?? product.price;
-  const discountPrice = vendorProduct.discountPrice ?? product.discountPrice;
+  const rawPrice = vendorProduct.price ?? product.price;
+  const rawDiscountPrice = vendorProduct.discountPrice ?? product.discountPrice;
+  const price = rawPrice != null ? Math.round(Number(rawPrice)) : null;
+  const discountPrice = rawDiscountPrice != null ? Math.round(Number(rawDiscountPrice)) : null;
 
   return {
     ...product,

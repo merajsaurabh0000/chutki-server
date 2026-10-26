@@ -53,7 +53,8 @@ const priceCart = async (items, branch, couponCode) => {
   const priced = normalizedInput.map(input => {
     const vendorProduct = vendorProductMap.get(input.product);
     const product = vendorProduct.product;
-    const unitPrice = vendorProduct.discountPrice ?? vendorProduct.price ?? product.discountPrice ?? product.price;
+    const rawUnitPrice = vendorProduct.discountPrice ?? vendorProduct.price ?? product.discountPrice ?? product.price;
+    const unitPrice = Math.round(Number(rawUnitPrice) || 0);
     return {product: product._id, count: input.count, name: product.name, image: product.image, quantity: product.quantity, unitPrice};
   });
   const itemTotal = roundMoney(priced.reduce((sum, item) => sum + item.unitPrice * item.count, 0));

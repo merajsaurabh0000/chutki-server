@@ -175,7 +175,15 @@ export const googleLogin = async (req, reply) => {
   try {
     const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(req.body.id_token)}`);
     const data = await response.json();
-    if (!response.ok || !data.email_verified || data.aud !== process.env.GOOGLE_WEB_CLIENT_ID) return reply.code(401).send({ message: "Invalid credentials" });
+    const validAudiences = [
+      process.env.GOOGLE_WEB_CLIENT_ID,
+      process.env.GOOGLE_IOS_CLIENT_ID,
+      "646339803945-bjp12uj092cpiaknd4d4gf7hl2qvcig9.apps.googleusercontent.com",
+    ].filter(Boolean);
+
+    if (!response.ok || !data.email_verified || !validAudiences.includes(data.aud)) {
+      return reply.code(401).send({ message: "Invalid credentials" });
+    }
     let customer = await Customer.findOne({ $or: [{ email: data.email.toLowerCase() }, { socialId: data.sub }] });
     if (!customer) customer = new Customer({ email: data.email.toLowerCase(), name: data.name, picture: data.picture, socialId: data.sub, isActivated: true });
     if (!customer.isActivated) return reply.code(403).send({ message: "Account unavailable" });
