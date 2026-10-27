@@ -48,6 +48,8 @@ const orderSchema= new mongoose.Schema({
         latitude: { type: Number, required: true },
         longitude: { type: Number, required: true },
         address: { type: String },
+        receiverName: { type: String },
+        receiverPhone: { type: String },
       },
       pickupLocation: {
         latitude: { type: Number, required: true },

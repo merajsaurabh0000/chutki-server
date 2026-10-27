@@ -294,6 +294,8 @@ export const createOrder = async(req,reply)=>{
                 latitude: customerData.liveLocation.latitude,
                 longitude: customerData.liveLocation.longitude,
                 address: customerData.address || "No address available",
+                receiverName: customerData.selectedAddress?.receiverName || customerData.name || "Customer",
+                receiverPhone: customerData.selectedAddress?.phone ? String(customerData.selectedAddress.phone) : (customerData.phone ? String(customerData.phone) : ""),
             },
             pickupLocation: {
                 latitude: branchData.location.latitude,
@@ -531,9 +533,15 @@ export const getOrderById = async (req, reply) => {
     try {
       const { orderId } = req.params;
   
-      const order = await Order.findById(orderId).populate(
-        "customer branch items.item deliveryPartner"
-      );
+      const order = await Order.findById(orderId).populate([
+        {
+          path: "customer",
+          populate: { path: "selectedAddress" },
+        },
+        { path: "branch" },
+        { path: "items.item" },
+        { path: "deliveryPartner" },
+      ]);
   
       if (!order) {
         return reply.status(404).send({ message: "Order not found" });
